@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# Editors/OS
+.DS_Store
+.vscode/
+
+# Build/test artifacts
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Pipeline outputs
+runs/*
+!runs/.gitkeep
+
+dataset/*
+!dataset/.gitkeep
+
+# Logs
+*.log

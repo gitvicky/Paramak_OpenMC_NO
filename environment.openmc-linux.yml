@@ -1,0 +1,15 @@
+name: paramak_openmc_no
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - openmc
+  - cadquery
+  - scipy
+  - pandas
+  - pyyaml
+  - h5py
+  - pip
+  - pip:
+      - -e ./submodules/paramak
+      - -e ./submodules/openmc_plasma_source

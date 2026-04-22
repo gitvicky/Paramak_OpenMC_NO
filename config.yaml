@@ -1,0 +1,43 @@
+num_samples: 1000
+random_seed: 42
+
+execution:
+  run_dir: runs
+  dataset_dir: dataset
+  run_prefix: iter_
+  run_padding: 6
+  max_workers: 1
+
+geometry_bounds:
+  major_radius: [250.0, 450.0]
+  minor_radius: [50.0, 150.0]
+  center_column_shield_inner_radius: [20.0, 40.0]
+  center_column_shield_outer_radius: [50.0, 80.0]
+  blanket_thickness: [50.0, 100.0]
+  divertor_width: [30.0, 60.0]
+
+plasma_source_bounds:
+  ion_density_origin: [1.0e19, 1.0e20]
+  ion_temperature_origin: [10.0, 25.0]
+  elongation: [1.2, 2.0]
+  triangularity: [0.3, 0.6]
+  shafranov_shift: [0.0, 20.0]
+
+openmc_settings:
+  particles: 10000
+  batches: 50
+  inactive: 10
+  statepoint_batches: [50]
+
+mesh:
+  dimension: [40, 40, 40]
+  lower_left: [-500.0, -500.0, -500.0]
+  upper_right: [500.0, 500.0, 500.0]
+
+outputs:
+  doe_csv: dataset/doe_parameters.csv
+  doe_parquet: dataset/doe_parameters.parquet
+  compiled_hdf5: dataset/compiled_neutronics_data.h5
+  extraction_report: dataset/extraction_report.json
+  run_manifest: run_metadata.json
+  openmc_manifest: openmc_status.json

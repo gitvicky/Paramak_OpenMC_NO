@@ -1,0 +1,15 @@
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+pyyaml>=6.0
+h5py>=3.9
+cadquery
+
+# OpenMC + DAGMC stack is typically installed via conda-forge and is not
+# universally available as pip wheels on macOS.
+openmc; platform_system == "Linux"
+cad-to-dagmc; platform_system == "Linux"
+moab; platform_system == "Linux"
+
+# Editable local submodules
+-e ./submodules/paramak

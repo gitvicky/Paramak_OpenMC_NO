@@ -1,0 +1,6 @@
+[submodule "submodules/paramak"]
+	path = submodules/paramak
+	url = git@github.com:fusion-energy/paramak.git
+[submodule "submodules/openmc_plasma_source"]
+	path = submodules/openmc_plasma_source
+	url = git@github.com:fusion-energy/openmc-plasma-source.git
