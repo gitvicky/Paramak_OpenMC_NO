@@ -1,70 +1,73 @@
-num_samples: 2
-random_seed: 42
+num_samples: 1  # Number of DOE samples / reactor cases to generate in this run.
+random_seed: 42  # RNG seed for reproducible parameter sampling and source generation.
 
 execution:
-  run_dir: runs
-  dataset_dir: dataset
-  run_prefix: iter_
-  run_padding: 6
-  max_workers: 1
-  allow_macos_fallbacks: true
+  run_dir: runs  # Directory where per-iteration run folders are created.
+  dataset_dir: dataset  # Directory where compiled dataset artifacts are written.
+  run_prefix: iter_  # Prefix used when naming iteration folders.
+  run_padding: 6  # Zero-padding width for iteration names, e.g. iter_000001.
+  max_workers: 1  # Maximum parallel workers for stages that support concurrent execution.
+  allow_macos_fallbacks: true  # Allow placeholder outputs on macOS when full CAD/OpenMC tooling is unavailable.
+
+reactor:
+  rotation_angle: 360.0  # CAD sweep angle in degrees. 360 gives a full tokamak; 180 gives a half-model.
 
 geometry_bounds:
-  major_radius: [250.0, 450.0]
-  minor_radius: [50.0, 150.0]
-  center_column_shield_inner_radius: [20.0, 40.0]
-  center_column_shield_outer_radius: [50.0, 80.0]
-  blanket_thickness: [50.0, 100.0]
-  divertor_width: [30.0, 60.0]
+  major_radius: [250.0, 450.0]  # Sample range [cm] for plasma major radius. Larger values move the torus farther from the centerline.
+  minor_radius: [50.0, 150.0]  # Sample range [cm] for plasma minor radius. Larger values make the plasma cross-section thicker.
+  center_column_shield_inner_radius: [20.0, 40.0]  # Sample range [cm] for the inner radius of the center-column shield.
+  center_column_shield_outer_radius: [50.0, 80.0]  # Sample range [cm] for the outer radius of the center-column shield; must exceed the inner radius.
+  blanket_thickness: [50.0, 100.0]  # Sample range [cm] for blanket thickness. Larger values increase shielding/breeding volume.
+  divertor_width: [30.0, 60.0]  # Sample range [cm] for divertor width. In this simplified model it also affects derived vessel thickness.
 
 plasma_source_bounds:
-  ion_density_origin: [1.0e19, 1.0e20]
-  ion_temperature_origin: [10.0, 25.0]
-  elongation: [1.2, 2.0]
-  triangularity: [0.3, 0.6]
-  shafranov_shift: [0.0, 20.0]
+  ion_density_origin: [1.0e19, 1.0e20]  # DOE range for baseline ion density [m^-3] used when constructing source parameters.
+  ion_temperature_origin: [10.0, 25.0]  # DOE range for baseline ion temperature input used by this repo before conversion to eV.
+  elongation: [1.2, 2.0]  # DOE range for plasma elongation. Higher values stretch the plasma vertically.
+  triangularity: [0.3, 0.6]  # DOE range for triangularity. Higher values make the plasma more D-shaped.
+  shafranov_shift: [0.0, 20.0]  # DOE range [cm] for outward Shafranov shift of magnetic surfaces.
 
 tokamak_source:
-  enabled: true
-  strict: true
-  mode: H
-  ion_density_centre: 1.09e20
-  ion_density_pedestal: 1.09e20
-  ion_density_peaking_factor: 1.0
-  ion_density_separatrix: 3.0e19
-  ion_temperature_centre: 4.59e4
-  ion_temperature_pedestal: 6.09e3
-  ion_temperature_separatrix: 1.0e2
-  ion_temperature_peaking_factor: 8.06
-  ion_temperature_beta: 6.0
-  pedestal_radius_fraction: 0.8
+  enabled: true  # Use the detailed tokamak plasma source instead of the simple fallback point source.
+  strict: true  # Stop the run if plasma-source generation fails, rather than silently falling back.
+  mode: H  # Confinement mode. H-mode gives a pedestal-like edge profile; L/A use different radial profile shapes.
+  ion_density_centre: 1.09e20  # Core ion density [m^-3]. Higher values raise overall source strength, especially in the core.
+  ion_density_pedestal: 1.09e20  # Density at the pedestal [m^-3]. Lowering this steepens the edge drop; raising it broadens outer emission.
+  ion_density_peaking_factor: 1.0  # Density peaking exponent. Higher values make density more core-concentrated.
+  ion_density_separatrix: 3.0e19  # Edge density [m^-3]. Higher values keep more source probability near the separatrix.
+  ion_temperature_centre: 3.0e4  # Core ion temperature [eV]. Higher values strongly increase fusion reactivity in the plasma center.
+  ion_temperature_pedestal: 1.5e04  # Pedestal temperature [eV]. Higher values broaden the emitting region by keeping outer radii hotter.
+  ion_temperature_separatrix: 1.0e2  # Edge temperature [eV]. Usually small; increasing it slightly warms the extreme edge.
+  ion_temperature_peaking_factor: 2.5  # Main temperature-shape exponent. Higher values produce a more sharply peaked core.
+  ion_temperature_beta: 2.0  # Controls how abruptly temperature rolls off toward the pedestal. Lower values broaden the profile.
+  pedestal_radius_fraction: 0.9  # Pedestal location as a fraction of minor radius. Larger values extend the hot region farther outward.
   fuel:
-    D: 0.5
-    T: 0.5
-  sample_size: 1000
+    D: 0.5  # Deuterium fraction. Together with T sets the DD and DT reaction contributions.
+    T: 0.5  # Tritium fraction. Together with D sets the DT and TT reaction contributions.
+  sample_size: 1000  # Number of sampled plasma source rings. Higher values smooth the source but increase setup cost.
 
 openmc_settings:
-  particles: 10000
-  batches: 50
-  inactive: 10
-  statepoint_batches: [50]
+  particles: 50000  # Histories per batch. Higher values reduce tally noise but increase runtime.
+  batches: 100  # Number of fixed-source batches to run. More batches generally improve statistics.
+  inactive: 0  # Batches skipped from scoring; usually zero for fixed-source calculations.
+  statepoint_batches: [10, 50, 100]  # Batch numbers where OpenMC writes statepoint files for inspection or restart.
 
 mesh:
-  dimension: [40, 40, 40]
-  lower_left: [-500.0, -500.0, -500.0]
-  upper_right: [500.0, 500.0, 500.0]
+  dimension: [40, 40, 40]  # Number of mesh bins in x, y, z for flux and heating tallies.
+  lower_left: [-500.0, -500.0, -500.0]  # Lower-left corner [cm] of the regular tally mesh.
+  upper_right: [500.0, 500.0, 500.0]  # Upper-right corner [cm] of the regular tally mesh.
 
 cad_to_dagmc_settings:
-  min_mesh_size: 10.0
-  max_mesh_size: 25.0
+  min_mesh_size: 10.0  # Minimum surface mesh size used during CAD-to-DAGMC conversion.
+  max_mesh_size: 25.0  # Maximum surface mesh size used during CAD-to-DAGMC conversion. Larger values coarsen the mesh.
 
 openmc_data:
-  cross_sections: .openmc-data/fendl-3.2-hdf5/cross_sections.xml
+  cross_sections: .openmc-data/fendl-3.2-hdf5/cross_sections.xml  # Path to the OpenMC cross_sections.xml nuclear data library.
 
 outputs:
-  doe_csv: dataset/doe_parameters.csv
-  doe_parquet: dataset/doe_parameters.parquet
-  compiled_hdf5: dataset/compiled_neutronics_data.h5
-  extraction_report: dataset/extraction_report.json
-  run_manifest: run_metadata.json
-  openmc_manifest: openmc_status.json
+  doe_csv: dataset/doe_parameters.csv  # CSV file containing sampled DOE input parameters.
+  doe_parquet: dataset/doe_parameters.parquet  # Parquet copy of the sampled DOE input parameters.
+  compiled_hdf5: dataset/compiled_neutronics_data.h5  # Final compiled dataset containing inputs and extracted neutronics outputs.
+  extraction_report: dataset/extraction_report.json  # Summary report from the extraction/compilation stage.
+  run_manifest: run_metadata.json  # Per-run metadata file written during CAD generation.
+  openmc_manifest: openmc_status.json  # Per-run metadata file written during the OpenMC stage.

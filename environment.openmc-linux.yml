@@ -15,6 +15,7 @@ dependencies:
   - h5py
   - matplotlib
   - pyvista
+  - openmc-plotter
   - pip
   - pip:
       - cadquery-direct-mesh-plugin>=0.1.0

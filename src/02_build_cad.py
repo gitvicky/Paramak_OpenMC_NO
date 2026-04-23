@@ -192,7 +192,7 @@ def main() -> None:
         }
 
         try:
-            assembly = build_reactor_assembly(row, paramak)
+            assembly = build_reactor_assembly(row, paramak, config=config)
             assembly.save(str(step_path))
 
             if shutil.which("cad_to_dagmc") is not None:

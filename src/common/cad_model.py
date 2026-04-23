@@ -42,15 +42,17 @@ def build_radial_build(row: pd.Series, layer_type) -> list:
 def build_reactor_assembly(
     row: pd.Series,
     paramak_module,
+    config: Optional[dict] = None,
     colors: Optional[dict] = None,
 ):
     """Build the Paramak spherical tokamak assembly for a DOE row."""
     radial_build = build_radial_build(row, paramak_module.LayerType)
+    reactor_cfg = {} if config is None else config.get("reactor", {})
     kwargs = {
         "radial_build": radial_build,
         "elongation": float(row["elongation"]),
         "triangularity": float(row["triangularity"]),
-        "rotation_angle": 180,
+        "rotation_angle": float(reactor_cfg.get("rotation_angle", 180.0)),
     }
     if colors is not None:
         kwargs["colors"] = colors

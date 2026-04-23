@@ -10,6 +10,39 @@ This repository generates supervised-learning datasets for tokamak neutronics st
 
 The baseline reactor is `paramak.spherical_tokamak_from_plasma`.
 
+The CAD sweep angle is controlled with:
+
+```yaml
+reactor:
+  rotation_angle: 360.0
+```
+
+Set it to `180.0` for a half-tokamak sector or `360.0` for the full 3D tokamak.
+
+## Materials
+
+The current tokamak model uses a fixed material map for all DOE samples. The DOE changes geometry and plasma/source parameters, but it does not currently vary material compositions or densities.
+
+- `layer_1` and `layer_2` are tagged as `shield`
+  - density: `7.9 g/cm3`
+  - composition: `Fe 90%`, `C 10%`
+- `layer_3` is tagged as `first_wall`
+  - density: `7.9 g/cm3`
+  - composition: `Fe 70%`, `Cr 20%`, `Ni 10%`
+- `layer_4` is tagged as `blanket`
+  - density: `10.0 g/cm3`
+  - composition: `Li 17%`, `Pb 83%`
+- `layer_5` is tagged as `vacuum_vessel`
+  - density: `7.9 g/cm3`
+  - composition: `Fe 70%`, `Cr 20%`, `Ni 10%`
+- `plasma` is tagged as `vacuum`
+  - density: `1.0e-12 g/cm3`
+  - composition: low-density hydrogen placeholder
+
+These defaults are defined in `src/common/materials.py`, and the CAD-layer to material-tag mapping is defined in `src/02_build_cad.py`.
+
+To make materials part of the DOE, add material parameters to `config.yaml` and `src/common/config.py`, sample them in stage 01, then update `src/common/materials.py` so `build_materials(...)` constructs OpenMC materials from each sampled row instead of using fixed defaults.
+
 ## Choose Your Platform
 
 ### macOS
@@ -177,7 +210,33 @@ Best for:
 - verifying that sampled geometry parameters produce sensible CAD
 - saving quick geometry images for reports or debugging
 
-### 2. 2D slices from the compiled HDF5 dataset
+### 2. OpenMC Plotter for per-run results
+
+Script: `src/08_launch_openmc_plotter.py`
+
+Use this when you want to inspect a completed OpenMC run directly in `openmc-plotter`. The launcher points the plotter at a specific run directory such as `runs/iter_000001`, where `model.xml`, `summary.h5`, and `statepoint.<batches>.h5` already live.
+
+Typical commands:
+
+```bash
+python src/08_launch_openmc_plotter.py --iteration 1
+python src/08_launch_openmc_plotter.py --run-dir runs/iter_000001
+make plotter ITER=1
+```
+
+Workflow:
+
+- the script launches `openmc-plotter <run_dir>`
+- once the GUI opens, load the matching statepoint from `Edit -> Open StatePoint`
+- for a default run this is usually `runs/iter_000001/statepoint.50.h5`
+
+Best for:
+
+- checking tally results directly against the exact OpenMC/DAGMC model
+- using the native OpenMC geometry viewer instead of the custom PyVista overlay
+- exploring mesh tally data interactively with the model files produced in each run directory
+
+### 3. 2D slices from the compiled HDF5 dataset
 
 Script: `src/06_visualize_dataset.py`
 
@@ -196,7 +255,7 @@ Best for:
 - comparing slices through the mesh without opening a 3D viewer
 - generating simple figures directly from the compiled dataset
 
-### 3. 3D flux or heating overlay on the CAD model
+### 4. 3D flux or heating overlay on the CAD model
 
 Script: `src/07_visualize_cad_field_3d.py`
 
@@ -264,8 +323,10 @@ python -c "import openmc; print('openmc stack ok')"
 python -c "import openmc; print(openmc.__version__)"
 python -c "import cad_to_dagmc; print(cad_to_dagmc.__version__)"
 python -c "import cadquery_direct_mesh_plugin; print('cadquery mesh plugin ok')"
+python -c "import openmc_plotter; print('openmc_plotter ok')"
 python -c "import pkg_resources; print('pkg_resources ok')"
 which openmc
+which openmc-plotter
 test -f .openmc-data/fendl-3.2-hdf5/cross_sections.xml && echo "cross sections ok"
 ```
 
@@ -322,6 +383,7 @@ Compiled dataset files are written under `dataset/`, including:
 - `src/02_build_cad.py`: build CAD and export DAGMC geometry
 - `src/03_run_openmc.py`: run OpenMC transport
 - `src/04_extract_data.py`: extract tallies and compile the dataset
+- `src/08_launch_openmc_plotter.py`: launch `openmc-plotter` for a selected run directory
 - `src/common/`: shared helpers and config handling
 - `tests/test_smoke.py`: smoke tests
 - `submodules/paramak`: local Paramak dependency

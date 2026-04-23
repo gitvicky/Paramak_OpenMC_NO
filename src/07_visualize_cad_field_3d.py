@@ -11,11 +11,18 @@ import pandas as pd
 import pyvista as pv
 
 from common.cad_model import build_reactor_assembly
+from common.config import load_config
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Overlay compiled mesh tallies on a 3D Paramak CAD view"
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config.yaml"),
+        help="Path to config YAML for reactor CAD settings",
     )
     parser.add_argument(
         "--dataset",
@@ -102,13 +109,13 @@ def build_uniform_grid(
     return grid.cell_data_to_point_data()
 
 
-def build_cad_mesh(row: pd.Series):
+def build_cad_mesh(row: pd.Series, config: dict):
     try:
         import paramak
     except Exception as exc:
         raise ImportError(f"Could not import paramak: {exc}") from exc
 
-    assembly = build_reactor_assembly(row, paramak)
+    assembly = build_reactor_assembly(row, paramak, config=config)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         stl_path = Path(tmpdir) / "reactor.stl"
@@ -162,6 +169,7 @@ def add_field_actor(plotter: pv.Plotter, grid, field_name: str, mode: str) -> No
 
 def main() -> None:
     args = parse_args()
+    config = load_config(str(args.config))
     row, iteration_id, dims, lower_left, upper_right, flux, heating = load_sample(
         args.dataset,
         args.sample,
@@ -170,7 +178,7 @@ def main() -> None:
     field_values = flux if args.field == "flux" else heating
     field_name = f"{args.field}_mean"
     grid = build_uniform_grid(dims, lower_left, upper_right, field_values, field_name)
-    cad_mesh = build_cad_mesh(row)
+    cad_mesh = build_cad_mesh(row, config)
 
     plotter = pv.Plotter(off_screen=args.screenshot is not None and not args.show)
     plotter.set_background("white")

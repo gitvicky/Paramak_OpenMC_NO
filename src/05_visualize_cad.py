@@ -88,7 +88,7 @@ def main() -> None:
         raise ImportError(f"Could not import paramak: {exc}") from exc
 
     colors = None if args.no_colors else DEFAULT_REACTOR_COLORS
-    assembly = build_reactor_assembly(row, paramak, colors=colors)
+    assembly = build_reactor_assembly(row, paramak, config=config, colors=colors)
 
     requested_exports = any(
         value is not None for value in (args.png, args.svg, args.step)

@@ -9,6 +9,9 @@ execution:
   max_workers: 1
   allow_macos_fallbacks: true
 
+reactor:
+  rotation_angle: 360.0
+
 geometry_bounds:
   major_radius: [250.0, 260.0]
   minor_radius: [60.0, 70.0]

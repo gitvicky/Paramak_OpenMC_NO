@@ -3,7 +3,7 @@ CONDA_ENV_PYTHON := $(if $(CONDA_BASE),$(wildcard $(CONDA_BASE)/envs/paramak_ope
 PYTHON ?= $(if $(CONDA_ENV_PYTHON),$(CONDA_ENV_PYTHON),$(if $(wildcard .venv/bin/python),./.venv/bin/python,python3))
 CONFIG ?= config.yaml
 
-.PHONY: all doe cad openmc extract smoke test-smoke clean
+.PHONY: all doe cad openmc extract plotter smoke test-smoke clean
 
 all: doe cad openmc extract
 
@@ -18,6 +18,9 @@ openmc:
 
 extract:
 	$(PYTHON) src/04_extract_data.py --config $(CONFIG)
+
+plotter:
+	$(PYTHON) src/08_launch_openmc_plotter.py --config $(CONFIG) --iteration $(if $(ITER),$(ITER),1)
 
 smoke:
 	$(MAKE) all CONFIG=configs/config.smoke.yaml

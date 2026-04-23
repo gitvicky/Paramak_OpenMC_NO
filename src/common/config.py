@@ -110,6 +110,12 @@ def validate_config(config: Dict) -> None:
         if key not in mesh:
             raise ValueError(f"Missing mesh.{key}")
 
+    reactor_cfg = config.get("reactor", {})
+    if "rotation_angle" in reactor_cfg:
+        rotation_angle = float(reactor_cfg["rotation_angle"])
+        if rotation_angle <= 0.0 or rotation_angle > 360.0:
+            raise ValueError("reactor.rotation_angle must satisfy 0 < angle <= 360")
+
 
 def parameter_bounds(config: Dict) -> List[Tuple[str, float, float]]:
     bounds = []
