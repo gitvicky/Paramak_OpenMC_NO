@@ -24,6 +24,25 @@ plasma_source_bounds:
   triangularity: [0.35, 0.4]
   shafranov_shift: [0.0, 5.0]
 
+tokamak_source:
+  enabled: true
+  strict: true
+  mode: H
+  ion_density_centre: 1.09e20
+  ion_density_pedestal: 1.09e20
+  ion_density_peaking_factor: 1.0
+  ion_density_separatrix: 3.0e19
+  ion_temperature_centre: 4.59e4
+  ion_temperature_pedestal: 6.09e3
+  ion_temperature_separatrix: 1.0e2
+  ion_temperature_peaking_factor: 8.06
+  ion_temperature_beta: 6.0
+  pedestal_radius_fraction: 0.8
+  fuel:
+    D: 0.5
+    T: 0.5
+  sample_size: 200
+
 openmc_settings:
   particles: 1000
   batches: 5

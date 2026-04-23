@@ -17,3 +17,4 @@ dependencies:
   - pip:
       - cadquery-direct-mesh-plugin>=0.1.0
       - -e ./submodules/paramak
+      - -e ./submodules/openmc_plasma_source

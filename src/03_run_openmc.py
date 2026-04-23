@@ -44,24 +44,38 @@ def build_mesh_tally(openmc_module, mesh_cfg: dict):
     return [flux_tally, heating_tally]
 
 
-def make_source(row: pd.Series):
-    try:
-        from openmc_plasma_source import tokamak_source
-    except Exception:
-        repo_root = Path(__file__).resolve().parents[1]
-        plasma_src = repo_root / "submodules" / "openmc_plasma_source" / "src"
-        if plasma_src.exists():
-            sys.path.insert(0, str(plasma_src))
-            try:
-                from openmc_plasma_source import tokamak_source
-            except Exception:
-                return None
-        else:
-            return None
+TOKAMAK_SOURCE_KEYS = {
+    "major_radius",
+    "minor_radius",
+    "elongation",
+    "triangularity",
+    "mode",
+    "ion_density_centre",
+    "ion_density_peaking_factor",
+    "ion_density_pedestal",
+    "ion_density_separatrix",
+    "ion_temperature_centre",
+    "ion_temperature_peaking_factor",
+    "ion_temperature_beta",
+    "ion_temperature_pedestal",
+    "ion_temperature_separatrix",
+    "pedestal_radius",
+    "shafranov_factor",
+    "angles",
+    "sample_size",
+    "fuel",
+    "sample_seed",
+}
+
+
+def build_tokamak_source_kwargs(row: pd.Series, config: dict) -> dict:
+    source_cfg = dict(config.get("tokamak_source", {}))
+    major_radius = float(row["major_radius"])
+    minor_radius = float(row["minor_radius"])
 
     kwargs = {
-        "major_radius": float(row["major_radius"]),
-        "minor_radius": float(row["minor_radius"]),
+        "major_radius": major_radius,
+        "minor_radius": minor_radius,
         "elongation": float(row["elongation"]),
         "triangularity": float(row["triangularity"]),
         "mode": "H",
@@ -74,15 +88,56 @@ def make_source(row: pd.Series):
         "ion_temperature_beta": 1.0,
         "ion_temperature_pedestal": float(row["ion_temperature_origin"]) * 0.6e3,
         "ion_temperature_separatrix": float(row["ion_temperature_origin"]) * 0.2e3,
-        "pedestal_radius": float(row["minor_radius"]) * 0.8,
+        "pedestal_radius": minor_radius * 0.8,
         "shafranov_factor": float(row["shafranov_shift"]),
         "sample_size": 1000,
+        "fuel": {"D": 0.5, "T": 0.5},
     }
 
+    pedestal_radius_fraction = source_cfg.pop("pedestal_radius_fraction", None)
+    for key, value in source_cfg.items():
+        if key in {"enabled", "strict"}:
+            continue
+        if key in TOKAMAK_SOURCE_KEYS:
+            kwargs[key] = value
+
+    if pedestal_radius_fraction is not None:
+        kwargs["pedestal_radius"] = minor_radius * float(pedestal_radius_fraction)
+
+    if "angles" in kwargs:
+        kwargs["angles"] = tuple(float(value) for value in kwargs["angles"])
+
+    if "fuel" in kwargs:
+        kwargs["fuel"] = {str(key): float(value) for key, value in kwargs["fuel"].items()}
+
+    numeric_keys = TOKAMAK_SOURCE_KEYS - {"mode", "angles", "fuel"}
+    for key in numeric_keys:
+        if key in kwargs:
+            kwargs[key] = float(kwargs[key]) if key != "sample_size" else int(kwargs[key])
+
+    return kwargs
+
+
+def make_source(row: pd.Series, config: dict):
+    kwargs = build_tokamak_source_kwargs(row, config)
     try:
-        return tokamak_source(**kwargs)
-    except Exception:
-        return None
+        from openmc_plasma_source import tokamak_source
+    except Exception as exc:
+        repo_root = Path(__file__).resolve().parents[1]
+        plasma_src = repo_root / "submodules" / "openmc_plasma_source" / "src"
+        if plasma_src.exists():
+            sys.path.insert(0, str(plasma_src))
+            try:
+                from openmc_plasma_source import tokamak_source
+            except Exception as inner_exc:
+                return None, kwargs, repr(inner_exc)
+        else:
+            return None, kwargs, repr(exc)
+
+    try:
+        return tokamak_source(**kwargs), kwargs, None
+    except Exception as exc:
+        return None, kwargs, repr(exc)
 
 
 def make_default_source(openmc_module, row: pd.Series):
@@ -155,6 +210,9 @@ def main() -> None:
     openmc = load_openmc_module()
     macos_fallbacks_allowed = allow_macos_fallbacks(config)
     running_on_macos = platform_system() == "Darwin"
+    tokamak_source_cfg = config.get("tokamak_source", {})
+    tokamak_source_enabled = bool(tokamak_source_cfg.get("enabled", True))
+    tokamak_source_strict = bool(tokamak_source_cfg.get("strict", False))
 
     doe = pd.read_csv(config["outputs"]["doe_csv"]) 
     if args.end_iteration is not None:
@@ -190,6 +248,10 @@ def main() -> None:
             "error": None,
             "statepoint": str(statepoint_path),
             "used_plasma_source": False,
+            "plasma_source_requested": tokamak_source_enabled,
+            "plasma_source_type": "tokamak" if tokamak_source_enabled else None,
+            "plasma_source_error": None,
+            "plasma_source_kwargs": None,
             "used_fallback_statepoint": False,
             "fallback_reason": None,
         }
@@ -237,11 +299,20 @@ def main() -> None:
             settings.inactive = int(config["openmc_settings"]["inactive"])
             settings.statepoint = {"batches": config["openmc_settings"]["statepoint_batches"]}
 
-            source = make_source(row)
+            source = None
+            if tokamak_source_enabled:
+                source, source_kwargs, source_error = make_source(row, config)
+                payload["plasma_source_kwargs"] = source_kwargs
+                payload["plasma_source_error"] = source_error
             if source is not None:
                 settings.source = source
                 payload["used_plasma_source"] = True
             else:
+                if tokamak_source_enabled and tokamak_source_strict:
+                    raise RuntimeError(
+                        "Strict tokamak plasma source requested, but source creation failed. "
+                        f"Details: {payload['plasma_source_error']}"
+                    )
                 default_source = make_default_source(openmc, row)
                 if default_source is not None:
                     settings.source = default_source

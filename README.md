@@ -14,14 +14,14 @@ The baseline reactor is `paramak.spherical_tokamak_from_plasma`.
 
 ### macOS
 
-macOS can run the full pipeline command flow.
+macOS can now run the full pipeline with real DAGMC conversion and real OpenMC fixed-source transport, provided the Conda environment and OpenMC nuclear data are installed.
 
-There are two macOS modes:
+There are two practical macOS modes:
 
-- native Apple Silicon or Intel setup for development and full pipeline execution with fallback artifacts if OpenMC/DAGMC tooling is unavailable
-- Intel-compatible Conda setup (`osx-64`) when you want a verified path for real `openmc` and DAGMC tooling on an Apple Silicon Mac
+- native `environment.yml` setup for development and visualization
+- Conda environment with `openmc`, `dagmc`, `moab`, and `cad_to_dagmc` for exact CAD-to-DAGMC conversion and exact transport
 
-Apple Silicon (`arm64`) is supported directly. Start with the native `environment.yml` setup below.
+Start with the project environment:
 
 ```bash
 git clone <your-repo-url>
@@ -35,19 +35,18 @@ make all
 Important:
 
 - On Apple Silicon Macs, the commands above create a native ARM Conda environment.
-- `make all` works on macOS.
-- `environment.yml` installs `cad_to_dagmc` from `conda-forge`.
+- `make` now prefers the Conda env `paramak_openmc_no` automatically when it exists.
+- `environment.yml` installs `cad_to_dagmc`, `cadquery`, and the visualization stack.
 - `cad_to_dagmc` currently expects `cadquery_direct_mesh_plugin` when using its default CadQuery meshing backend, so the environment files install `cadquery-direct-mesh-plugin` via `pip`.
-- `config.yaml` has `execution.allow_macos_fallbacks: true`, so missing `cad_to_dagmc` or `openmc` can be replaced with synthetic placeholder outputs.
-- That means you can run the whole pipeline on macOS even when the full neutronics stack is not available.
-- If macOS falls back to placeholder `dagmc.h5m` or fallback statepoints, the pipeline completes, but those are not real OpenMC transport results.
+- `config.yaml` and `configs/config.smoke.yaml` now also include:
+  - `cad_to_dagmc_settings` for mesh sizing during DAGMC export
+  - `openmc_data.cross_sections` for the OpenMC nuclear data path
+- `execution.allow_macos_fallbacks: true` still exists, but with the real Conda stack and nuclear data installed the pipeline uses exact outputs rather than placeholders.
 - If you want a lighter validation run on macOS, use `make smoke`.
 
-If you specifically need a Conda environment that mimics Intel macOS tooling for `openmc`, create it as `osx-64` instead of native ARM:
+If you need the exact OpenMC stack, install it into the same Conda env:
 
 ```bash
-conda create -n paramak_openmc_no --platform osx-64 python=3.11
-conda activate paramak_openmc_no
 conda config --add channels conda-forge
 conda config --set channel_priority strict
 conda install -c conda-forge cad_to_dagmc
@@ -55,19 +54,20 @@ conda install -c conda-forge -y "openmc=0.15.2=dagmc*"
 pip install -r requirements.txt
 ```
 
-This `osx-64` route has been validated in the project environment with:
+This route has been validated in the project environment with:
 
 - `python 3.11`
 - `openmc 0.15.2` with a `dagmc_*` build
 - `dagmc 3.2.4`
 - `moab 5.5.1`
-- `cad_to_dagmc 0.11.5`
+- `cad_to_dagmc 0.7.0`
 
 Note:
 
 - `cad_to_dagmc` from `conda-forge` installs the Python package, but does not provide a `cad_to_dagmc` shell command in this setup.
-- The project CAD stage supports the installed Python package directly, so a missing `cad_to_dagmc` CLI is expected here and does not mean the converter is unavailable.
-- That `osx-64` route is the best option on Apple Silicon when you want real `openmc` on macOS instead of relying on fallback outputs.
+- The project CAD stage supports the installed Python package directly, so a missing `cad_to_dagmc` CLI is expected and does not mean the converter is unavailable.
+- `requirements.txt` and `environment.yml` now install the local `openmc_plasma_source` package as well.
+- The default config now requests the exact `openmc_plasma_source.tokamak_source(...)` model in strict mode, so if `NeSST` is missing the OpenMC stage fails instead of silently falling back to a simple point source.
 
 ### Linux
 
@@ -83,6 +83,35 @@ make all
 ```
 
 You will also need OpenMC nuclear data configured on the machine for real transport runs.
+
+## OpenMC Nuclear Data
+
+Real OpenMC transport requires an HDF5 cross-section library and `cross_sections.xml`.
+
+This repository is currently configured to use:
+
+```text
+.openmc-data/fendl-3.2-hdf5/cross_sections.xml
+```
+
+That library can be obtained from the official OpenMC data page:
+
+- https://openmc.org/data/
+
+One working setup is:
+
+```bash
+mkdir -p .openmc-data
+curl -L https://anl.box.com/shared/static/3cb7jetw7tmxaw6nvn77x6c578jnm2ey.xz -o .openmc-data/fendl32.tar.xz
+tar -xJf .openmc-data/fendl32.tar.xz -C .openmc-data
+```
+
+After extraction, the repo config already points at the expected file:
+
+```yaml
+openmc_data:
+  cross_sections: .openmc-data/fendl-3.2-hdf5/cross_sections.xml
+```
 
 ## What To Run
 
@@ -117,6 +146,12 @@ make cad
 make openmc
 make extract
 ```
+
+`make all` now defaults to:
+
+1. `$(CONDA_BASE)/envs/paramak_openmc_no/bin/python` if that env exists
+2. `./.venv/bin/python` if present
+3. `python3`
 
 ## Visualization Tools
 
@@ -200,7 +235,7 @@ make test-smoke
 
 ## Environment Files
 
-- `environment.yml`: macOS-friendly development environment
+- `environment.yml`: macOS-friendly development environment with CAD conversion support
 - `environment.openmc-linux.yml`: Linux environment for full OpenMC runs
 
 If the Linux environment already exists, update it with:
@@ -225,18 +260,19 @@ python -m unittest tests.test_smoke
 For full-run readiness:
 
 ```bash
-python -c "import openmc, openmc_plasma_source; print('openmc stack ok')"
+python -c "import openmc; print('openmc stack ok')"
 python -c "import openmc; print(openmc.__version__)"
 python -c "import cad_to_dagmc; print(cad_to_dagmc.__version__)"
 python -c "import cadquery_direct_mesh_plugin; print('cadquery mesh plugin ok')"
 python -c "import pkg_resources; print('pkg_resources ok')"
 which openmc
+test -f .openmc-data/fendl-3.2-hdf5/cross_sections.xml && echo "cross sections ok"
 ```
 
-If `make` is picking up the wrong interpreter on macOS, run:
+Optional plasma source check:
 
 ```bash
-make PYTHON=$(which python) cad
+python -c "import sys; sys.path.insert(0, 'submodules/openmc_plasma_source/src'); import openmc_plasma_source; import NeSST; print('openmc_plasma_source + NeSST ok')"
 ```
 
 ## Configuration
@@ -253,8 +289,11 @@ Key settings in `config.yaml`:
 - `num_samples`: number of designs to generate
 - `geometry_bounds`: sampled reactor geometry ranges
 - `plasma_source_bounds`: sampled plasma source ranges
+- `tokamak_source`: exact OpenMC plasma-source settings passed to `openmc_plasma_source.tokamak_source`
 - `openmc_settings`: particles, batches, inactive cycles, statepoints
 - `mesh`: mesh tally bounds and resolution
+- `cad_to_dagmc_settings`: CAD surface mesh sizing used for DAGMC export
+- `openmc_data`: path to `cross_sections.xml`
 - `execution`: run directories, worker count, macOS fallback behavior
 - `outputs`: dataset and report output paths
 
@@ -266,6 +305,8 @@ Per-run files are written under `runs/<iteration>/`, including:
 - `run_metadata.json`
 - `openmc_status.json`
 - `statepoint.<batches>.h5`
+
+`openmc_status.json` records whether the exact tokamak plasma source was requested and used. In strict mode, any source-construction failure is reported there and causes the OpenMC stage to fail.
 
 Compiled dataset files are written under `dataset/`, including:
 

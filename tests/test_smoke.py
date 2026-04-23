@@ -292,6 +292,14 @@ class SmokeTests(unittest.TestCase):
                 self.assertTrue((run_dir / "run_metadata.json").exists())
                 self.assertTrue((run_dir / "openmc_status.json").exists())
                 self.assertTrue((run_dir / "statepoint.5.h5").exists())
+                with (run_dir / "openmc_status.json").open("r", encoding="utf-8") as stream:
+                    openmc_status = json.load(stream)
+                self.assertTrue(openmc_status["used_plasma_source"])
+                self.assertTrue(openmc_status["plasma_source_requested"])
+                self.assertEqual(openmc_status["plasma_source_type"], "tokamak")
+                self.assertIsNone(openmc_status["plasma_source_error"])
+                self.assertEqual(openmc_status["plasma_source_kwargs"]["mode"], "H")
+                self.assertEqual(openmc_status["plasma_source_kwargs"]["fuel"], {"D": 0.5, "T": 0.5})
 
     def test_make_smoke_target_exists(self):
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")

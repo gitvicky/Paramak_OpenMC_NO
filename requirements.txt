@@ -20,3 +20,4 @@ moab; platform_system == "Linux"
 
 # Editable local submodules
 -e ./submodules/paramak
+-e ./submodules/openmc_plasma_source
