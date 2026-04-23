@@ -72,6 +72,13 @@ def build_tokamak_source_kwargs(row: pd.Series, config: dict) -> dict:
     source_cfg = dict(config.get("tokamak_source", {}))
     major_radius = float(row["major_radius"])
     minor_radius = float(row["minor_radius"])
+    ion_density_origin = float(row["ion_density_origin"])
+    ion_temperature_origin = float(row["ion_temperature_origin"]) * 1.0e3
+    density_pedestal_fraction = float(row.get("ion_density_pedestal_fraction", 0.7))
+    density_separatrix_fraction = float(row.get("ion_density_separatrix_fraction", 0.2))
+    temperature_pedestal_fraction = float(row.get("ion_temperature_pedestal_fraction", 0.6))
+    temperature_separatrix_fraction = float(row.get("ion_temperature_separatrix_fraction", 0.2))
+    pedestal_radius_fraction = float(row.get("pedestal_radius_fraction", 0.8))
 
     kwargs = {
         "major_radius": major_radius,
@@ -79,30 +86,26 @@ def build_tokamak_source_kwargs(row: pd.Series, config: dict) -> dict:
         "elongation": float(row["elongation"]),
         "triangularity": float(row["triangularity"]),
         "mode": "H",
-        "ion_density_centre": float(row["ion_density_origin"]),
-        "ion_density_peaking_factor": 1.0,
-        "ion_density_pedestal": float(row["ion_density_origin"]) * 0.7,
-        "ion_density_separatrix": float(row["ion_density_origin"]) * 0.2,
-        "ion_temperature_centre": float(row["ion_temperature_origin"]) * 1.0e3,
-        "ion_temperature_peaking_factor": 1.0,
-        "ion_temperature_beta": 1.0,
-        "ion_temperature_pedestal": float(row["ion_temperature_origin"]) * 0.6e3,
-        "ion_temperature_separatrix": float(row["ion_temperature_origin"]) * 0.2e3,
-        "pedestal_radius": minor_radius * 0.8,
+        "ion_density_centre": ion_density_origin,
+        "ion_density_peaking_factor": float(row.get("ion_density_peaking_factor", 1.0)),
+        "ion_density_pedestal": ion_density_origin * density_pedestal_fraction,
+        "ion_density_separatrix": ion_density_origin * density_separatrix_fraction,
+        "ion_temperature_centre": ion_temperature_origin,
+        "ion_temperature_peaking_factor": float(row.get("ion_temperature_peaking_factor", 1.0)),
+        "ion_temperature_beta": float(row.get("ion_temperature_beta", 1.0)),
+        "ion_temperature_pedestal": ion_temperature_origin * temperature_pedestal_fraction,
+        "ion_temperature_separatrix": ion_temperature_origin * temperature_separatrix_fraction,
+        "pedestal_radius": minor_radius * pedestal_radius_fraction,
         "shafranov_factor": float(row["shafranov_shift"]),
         "sample_size": 1000,
         "fuel": {"D": 0.5, "T": 0.5},
     }
 
-    pedestal_radius_fraction = source_cfg.pop("pedestal_radius_fraction", None)
     for key, value in source_cfg.items():
         if key in {"enabled", "strict"}:
             continue
         if key in TOKAMAK_SOURCE_KEYS:
             kwargs[key] = value
-
-    if pedestal_radius_fraction is not None:
-        kwargs["pedestal_radius"] = minor_radius * float(pedestal_radius_fraction)
 
     if "angles" in kwargs:
         kwargs["angles"] = tuple(float(value) for value in kwargs["angles"])

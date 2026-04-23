@@ -1,4 +1,4 @@
-num_samples: 1  # Number of DOE samples / reactor cases to generate in this run.
+num_samples: 2  # Number of DOE samples / reactor cases to generate in this run.
 random_seed: 42  # RNG seed for reproducible parameter sampling and source generation.
 
 execution:
@@ -13,34 +13,32 @@ reactor:
   rotation_angle: 360.0  # CAD sweep angle in degrees. 360 gives a full tokamak; 180 gives a half-model.
 
 geometry_bounds:
-  major_radius: [250.0, 450.0]  # Sample range [cm] for plasma major radius. Larger values move the torus farther from the centerline.
-  minor_radius: [50.0, 150.0]  # Sample range [cm] for plasma minor radius. Larger values make the plasma cross-section thicker.
+  major_radius: [250.0, 500.0]  # Sample range [cm] for plasma major radius. Covers compact-to-medium spherical tokamak sizes without extreme machine scales.
+  minor_radius: [60.0, 140.0]  # Sample range [cm] for plasma minor radius. Broad enough for variation while staying within a plausible aspect range.
   center_column_shield_inner_radius: [20.0, 40.0]  # Sample range [cm] for the inner radius of the center-column shield.
-  center_column_shield_outer_radius: [50.0, 80.0]  # Sample range [cm] for the outer radius of the center-column shield; must exceed the inner radius.
-  blanket_thickness: [50.0, 100.0]  # Sample range [cm] for blanket thickness. Larger values increase shielding/breeding volume.
-  divertor_width: [30.0, 60.0]  # Sample range [cm] for divertor width. In this simplified model it also affects derived vessel thickness.
+  center_column_shield_outer_radius: [55.0, 95.0]  # Sample range [cm] for the outer radius of the center-column shield; kept comfortably above the inner-radius range.
+  blanket_thickness: [40.0, 110.0]  # Sample range [cm] for blanket thickness. Varies shielding/breeding volume without unrealistically thin or bulky blankets.
+  divertor_width: [25.0, 65.0]  # Sample range [cm] for divertor width. Adds geometric variety while staying in a more credible range.
 
 plasma_source_bounds:
-  ion_density_origin: [1.0e19, 1.0e20]  # DOE range for baseline ion density [m^-3] used when constructing source parameters.
-  ion_temperature_origin: [10.0, 25.0]  # DOE range for baseline ion temperature input used by this repo before conversion to eV.
-  elongation: [1.2, 2.0]  # DOE range for plasma elongation. Higher values stretch the plasma vertically.
-  triangularity: [0.3, 0.6]  # DOE range for triangularity. Higher values make the plasma more D-shaped.
+  ion_density_origin: [8.0e18, 1.2e20]  # DOE range for baseline ion density [m^-3], spanning lower-performance to strongly burning-plasma-like conditions.
+  ion_density_pedestal_fraction: [0.65, 0.95]  # DOE range for pedestal/core density ratio. Keeps edge density substantial without forcing a flat profile.
+  ion_density_separatrix_fraction: [0.08, 0.22]  # DOE range for edge/core density ratio. Allows edge variation while avoiding unrealistically hollow edges.
+  ion_density_peaking_factor: [0.8, 2.0]  # DOE range for density peaking. Covers flatter and moderately peaked profiles.
+  ion_temperature_origin: [8.0, 25.0]  # DOE range for baseline ion temperature input, spanning moderate to hot plasma conditions.
+  ion_temperature_pedestal_fraction: [0.25, 0.60]  # DOE range for pedestal/core temperature ratio. Broadens or sharpens the source while staying plausible for H-mode-like cases.
+  ion_temperature_separatrix_fraction: [0.01, 0.06]  # DOE range for edge/core temperature ratio. Keeps the extreme edge cool but non-negligible.
+  ion_temperature_peaking_factor: [1.5, 5.0]  # DOE range for temperature peaking. Avoids extremely flat or unrealistically needle-like cores.
+  ion_temperature_beta: [1.5, 4.5]  # DOE range for how abruptly temperature rolls off toward the pedestal.
+  elongation: [1.2, 2.0]  # DOE range for plasma elongation. Covers typical modest-to-strong vertical stretching.
+  triangularity: [0.2, 0.6]  # DOE range for triangularity, from mild to clearly D-shaped plasmas.
   shafranov_shift: [0.0, 20.0]  # DOE range [cm] for outward Shafranov shift of magnetic surfaces.
+  pedestal_radius_fraction: [0.75, 0.92]  # DOE range for pedestal location as a fraction of minor radius. Keeps the pedestal in a realistic outer-plasma band.
 
 tokamak_source:
   enabled: true  # Use the detailed tokamak plasma source instead of the simple fallback point source.
   strict: true  # Stop the run if plasma-source generation fails, rather than silently falling back.
   mode: H  # Confinement mode. H-mode gives a pedestal-like edge profile; L/A use different radial profile shapes.
-  ion_density_centre: 1.09e20  # Core ion density [m^-3]. Higher values raise overall source strength, especially in the core.
-  ion_density_pedestal: 1.09e20  # Density at the pedestal [m^-3]. Lowering this steepens the edge drop; raising it broadens outer emission.
-  ion_density_peaking_factor: 1.0  # Density peaking exponent. Higher values make density more core-concentrated.
-  ion_density_separatrix: 3.0e19  # Edge density [m^-3]. Higher values keep more source probability near the separatrix.
-  ion_temperature_centre: 3.0e4  # Core ion temperature [eV]. Higher values strongly increase fusion reactivity in the plasma center.
-  ion_temperature_pedestal: 1.5e04  # Pedestal temperature [eV]. Higher values broaden the emitting region by keeping outer radii hotter.
-  ion_temperature_separatrix: 1.0e2  # Edge temperature [eV]. Usually small; increasing it slightly warms the extreme edge.
-  ion_temperature_peaking_factor: 2.5  # Main temperature-shape exponent. Higher values produce a more sharply peaked core.
-  ion_temperature_beta: 2.0  # Controls how abruptly temperature rolls off toward the pedestal. Lower values broaden the profile.
-  pedestal_radius_fraction: 0.9  # Pedestal location as a fraction of minor radius. Larger values extend the hot region farther outward.
   fuel:
     D: 0.5  # Deuterium fraction. Together with T sets the DD and DT reaction contributions.
     T: 0.5  # Tritium fraction. Together with D sets the DT and TT reaction contributions.
@@ -54,8 +52,8 @@ openmc_settings:
 
 mesh:
   dimension: [40, 40, 40]  # Number of mesh bins in x, y, z for flux and heating tallies.
-  lower_left: [-500.0, -500.0, -500.0]  # Lower-left corner [cm] of the regular tally mesh.
-  upper_right: [500.0, 500.0, 500.0]  # Upper-right corner [cm] of the regular tally mesh.
+  lower_left: [-800.0, -800.0, -800.0]  # Lower-left corner [cm] of the regular tally mesh.
+  upper_right: [800.0, 800.0, 800.0]  # Upper-right corner [cm] of the regular tally mesh.
 
 cad_to_dagmc_settings:
   min_mesh_size: 10.0  # Minimum surface mesh size used during CAD-to-DAGMC conversion.

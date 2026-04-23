@@ -19,10 +19,18 @@ GEOMETRY_KEYS = [
 
 PLASMA_KEYS = [
     "ion_density_origin",
+    "ion_density_pedestal_fraction",
+    "ion_density_separatrix_fraction",
+    "ion_density_peaking_factor",
     "ion_temperature_origin",
+    "ion_temperature_pedestal_fraction",
+    "ion_temperature_separatrix_fraction",
+    "ion_temperature_peaking_factor",
+    "ion_temperature_beta",
     "elongation",
     "triangularity",
     "shafranov_shift",
+    "pedestal_radius_fraction",
 ]
 
 PARAMETER_COLUMNS = GEOMETRY_KEYS + PLASMA_KEYS
@@ -48,6 +56,11 @@ def _validate_bounds(bounds: Dict[str, List[float]], group_name: str) -> None:
         if not isinstance(value, (list, tuple)) or len(value) != 2:
             raise ValueError(f"{group_name}.{key} must be a [min, max] pair")
         lo, hi = value
+        try:
+            lo = float(lo)
+            hi = float(hi)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{group_name}.{key} bounds must be numeric, got {value}") from exc
         if lo >= hi:
             raise ValueError(f"{group_name}.{key} must satisfy min < max, got {value}")
 
@@ -81,6 +94,18 @@ def validate_config(config: Dict) -> None:
     for key in PLASMA_KEYS:
         if key not in plasma_bounds:
             raise ValueError(f"Missing plasma source bound for '{key}'")
+
+    unit_fraction_keys = [
+        "ion_density_pedestal_fraction",
+        "ion_density_separatrix_fraction",
+        "ion_temperature_pedestal_fraction",
+        "ion_temperature_separatrix_fraction",
+        "pedestal_radius_fraction",
+    ]
+    for key in unit_fraction_keys:
+        lo, hi = plasma_bounds[key]
+        if lo < 0.0 or hi > 1.0:
+            raise ValueError(f"plasma_source_bounds.{key} must stay within [0, 1]")
 
     inner = geometry_bounds["center_column_shield_inner_radius"]
     outer = geometry_bounds["center_column_shield_outer_radius"]

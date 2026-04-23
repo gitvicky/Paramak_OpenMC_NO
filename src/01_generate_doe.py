@@ -25,6 +25,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Write parquet DOE output in addition to CSV",
     )
+    parser.add_argument(
+        "--corners",
+        action="store_true",
+        help="Write two DOE rows: one at all lower bounds and one at all upper bounds",
+    )
     return parser.parse_args()
 
 
@@ -40,12 +45,15 @@ def main() -> None:
     lower = np.array([b[1] for b in bounds], dtype=float)
     upper = np.array([b[2] for b in bounds], dtype=float)
 
-    sampler = qmc.LatinHypercube(d=len(bounds), seed=seed)
-    unit_samples = sampler.random(n)
-    scaled_samples = qmc.scale(unit_samples, lower, upper)
+    if args.corners:
+        scaled_samples = np.vstack([lower, upper])
+    else:
+        sampler = qmc.LatinHypercube(d=len(bounds), seed=seed)
+        unit_samples = sampler.random(n)
+        scaled_samples = qmc.scale(unit_samples, lower, upper)
 
     df = pd.DataFrame(scaled_samples, columns=names)
-    df.insert(0, "iteration_id", np.arange(1, n + 1, dtype=int))
+    df.insert(0, "iteration_id", np.arange(1, len(df) + 1, dtype=int))
 
     outputs = config["outputs"]
     csv_path = Path(outputs["doe_csv"])
