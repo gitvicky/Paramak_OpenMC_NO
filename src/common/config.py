@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import platform
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -124,3 +126,12 @@ def run_name(iteration_id: int, config: Dict) -> str:
     prefix = str(config["execution"].get("run_prefix", "iter_"))
     pad = int(config["execution"].get("run_padding", 6))
     return f"{prefix}{iteration_id:0{pad}d}"
+
+
+def platform_system() -> str:
+    return os.environ.get("PARAMAK_OPENMC_PLATFORM", platform.system())
+
+
+def allow_macos_fallbacks(config: Dict) -> bool:
+    execution_cfg = config.get("execution", {})
+    return bool(execution_cfg.get("allow_macos_fallbacks", True))

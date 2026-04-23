@@ -3,12 +3,19 @@ pandas>=2.0
 scipy>=1.10
 pyyaml>=6.0
 h5py>=3.9
+matplotlib>=3.8
+pyvista>=0.43
 cadquery
+cadquery-direct-mesh-plugin>=0.1.0
+pyarrow
+fastparquet
 
-# OpenMC + DAGMC stack is typically installed via conda-forge and is not
-# universally available as pip wheels on macOS.
+# OpenMC + DAGMC stack is managed via conda-forge environments, not pip.
+# The verified macOS route is an osx-64 Conda env with:
+#   python=3.11
+#   openmc=0.15.2=dagmc*
+# That exact build should stay in Conda environment setup/docs rather than here.
 openmc; platform_system == "Linux"
-cad-to-dagmc; platform_system == "Linux"
 moab; platform_system == "Linux"
 
 # Editable local submodules

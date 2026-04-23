@@ -2,14 +2,21 @@ name: paramak_openmc_no
 channels:
   - conda-forge
 dependencies:
-  - python=3.10
+  - python=3.11
+  - setuptools<81
+  - numpy
   - openmc
+  - moab
+  - cad_to_dagmc
   - cadquery
   - scipy
   - pandas
   - pyyaml
   - h5py
+  - matplotlib
+  - pyvista
   - pip
   - pip:
+      - cadquery-direct-mesh-plugin>=0.1.0
       - -e ./submodules/paramak
       - -e ./submodules/openmc_plasma_source

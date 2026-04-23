@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import shutil
 import subprocess
 import time
 from pathlib import Path
 
 import pandas as pd
 
-from common.config import load_config, run_name
+from common.cad_model import build_reactor_assembly
+from common.config import allow_macos_fallbacks, load_config, platform_system, run_name
 from common.io_utils import write_json
 
 
@@ -24,32 +27,7 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-
-def build_radial_build(row: pd.Series, layer_type) -> list:
-    """Construct a minimal spherical tokamak radial build from sampled parameters."""
-    gap_inner = 10.0
-    shield_inboard = float(row["center_column_shield_inner_radius"])
-    shield_outer = max(10.0, float(row["center_column_shield_outer_radius"]) - shield_inboard)
-    plasma_thickness = float(row["minor_radius"]) * 2.0
-    gap_outboard = 60.0
-    first_wall = 10.0
-    blanket = float(row["blanket_thickness"])
-    vessel = max(5.0, float(row["divertor_width"]) * 0.25)
-
-    return [
-        (layer_type.GAP, gap_inner),
-        (layer_type.SOLID, shield_inboard),
-        (layer_type.SOLID, shield_outer),
-        (layer_type.GAP, 50.0),
-        (layer_type.PLASMA, plasma_thickness),
-        (layer_type.GAP, gap_outboard),
-        (layer_type.SOLID, first_wall),
-        (layer_type.SOLID, blanket),
-        (layer_type.SOLID, vessel),
-    ]
-
-
-def convert_step_to_h5m(step_path: Path, h5m_path: Path) -> None:
+def convert_step_to_h5m_with_cli(step_path: Path, h5m_path: Path) -> None:
     """Attempt CAD-to-DAGMC conversion using common cad_to_dagmc CLI shapes."""
     candidate_commands = [
         ["cad_to_dagmc", str(step_path), str(h5m_path)],
@@ -69,9 +47,47 @@ def convert_step_to_h5m(step_path: Path, h5m_path: Path) -> None:
     raise RuntimeError("Failed to convert STEP to H5M. Attempts: " + " | ".join(errors))
 
 
+def convert_step_to_h5m_with_python(step_path: Path, h5m_path: Path) -> None:
+    """Convert STEP to H5M via the cad_to_dagmc Python API when no CLI exists."""
+    from cad_to_dagmc import CadToDagmc
+
+    model = CadToDagmc()
+    model.add_stp_file(filename=str(step_path), material_tags="assembly_names")
+    model.export_dagmc_h5m_file(filename=str(h5m_path))
+
+    if not h5m_path.exists():
+        raise RuntimeError("cad_to_dagmc Python API did not produce an h5m file")
+
+
+def convert_step_to_h5m(step_path: Path, h5m_path: Path) -> None:
+    """Convert STEP to H5M using the CLI if present, otherwise the Python API."""
+    if shutil.which("cad_to_dagmc") is not None:
+        convert_step_to_h5m_with_cli(step_path, h5m_path)
+        return
+
+    if importlib.util.find_spec("cad_to_dagmc") is not None:
+        convert_step_to_h5m_with_python(step_path, h5m_path)
+        return
+
+    raise FileNotFoundError("cad_to_dagmc executable or Python package not found")
+
+
+def write_fallback_h5m(h5m_path: Path, iteration_id: int) -> None:
+    h5m_path.write_text(
+        f"macos fallback DAGMC placeholder for iteration {iteration_id}\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
+    macos_fallbacks_allowed = allow_macos_fallbacks(config)
+    running_on_macos = platform_system() == "Darwin"
+    converter_available = (
+        shutil.which("cad_to_dagmc") is not None
+        or importlib.util.find_spec("cad_to_dagmc") is not None
+    )
 
     doe_path = Path(config["outputs"]["doe_csv"])
     if not doe_path.exists():
@@ -112,6 +128,8 @@ def main() -> None:
             "status": "failed",
             "elapsed_seconds": None,
             "error": None,
+            "used_fallback_dagmc": False,
+            "fallback_reason": None,
             "parameters": row.to_dict(),
             "artifacts": {
                 "step": str(step_path),
@@ -120,16 +138,18 @@ def main() -> None:
         }
 
         try:
-            radial_build = build_radial_build(row, paramak.LayerType)
-            assembly = paramak.spherical_tokamak_from_plasma(
-                radial_build=radial_build,
-                elongation=float(row["elongation"]),
-                triangularity=float(row["triangularity"]),
-                rotation_angle=180,
-            )
+            assembly = build_reactor_assembly(row, paramak)
             assembly.save(str(step_path))
 
-            convert_step_to_h5m(step_path, h5m_path)
+            if converter_available:
+                convert_step_to_h5m(step_path, h5m_path)
+            elif running_on_macos and macos_fallbacks_allowed:
+                write_fallback_h5m(h5m_path, iteration_id)
+                payload["used_fallback_dagmc"] = True
+                payload["fallback_reason"] = "cad_to_dagmc not available on macOS; wrote placeholder h5m"
+            else:
+                raise FileNotFoundError("cad_to_dagmc executable or Python package not found")
+
             if not args.keep_step and step_path.exists():
                 step_path.unlink()
 
@@ -143,6 +163,8 @@ def main() -> None:
             write_json(manifest, payload)
 
     print(f"CAD stage complete. successes={success_count}, failures={failed_count}")
+    if failed_count:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

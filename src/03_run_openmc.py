@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from common.config import load_config, run_name
-from common.io_utils import write_json
+from common.config import allow_macos_fallbacks, load_config, platform_system, run_name
+from common.fallback_openmc import write_fallback_statepoint
+from common.io_utils import read_json, write_json
 from common.materials import build_materials
 
 
@@ -71,14 +72,20 @@ def make_source(row: pd.Series):
         return None
 
 
+def load_openmc_module():
+    try:
+        import openmc
+    except Exception:
+        return None
+    return openmc
+
+
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
-
-    try:
-        import openmc
-    except Exception as exc:
-        raise ImportError(f"Could not import openmc: {exc}") from exc
+    openmc = load_openmc_module()
+    macos_fallbacks_allowed = allow_macos_fallbacks(config)
+    running_on_macos = platform_system() == "Darwin"
 
     doe = pd.read_csv(config["outputs"]["doe_csv"]) 
     if args.end_iteration is not None:
@@ -114,9 +121,33 @@ def main() -> None:
             "error": None,
             "statepoint": str(statepoint_path),
             "used_plasma_source": False,
+            "used_fallback_statepoint": False,
+            "fallback_reason": None,
         }
 
         try:
+            manifest_path = run_dir / config["outputs"]["run_manifest"]
+            cad_manifest = read_json(manifest_path) if manifest_path.exists() else {}
+            fallback_due_to_placeholder_dagmc = bool(cad_manifest.get("used_fallback_dagmc"))
+
+            should_use_fallback = fallback_due_to_placeholder_dagmc or (
+                openmc is None and running_on_macos and macos_fallbacks_allowed
+            )
+
+            if should_use_fallback:
+                write_fallback_statepoint(statepoint_path, iteration_id, config["mesh"])
+                payload["used_fallback_statepoint"] = True
+                if fallback_due_to_placeholder_dagmc:
+                    payload["fallback_reason"] = "CAD stage used placeholder DAGMC on macOS"
+                else:
+                    payload["fallback_reason"] = "openmc not available on macOS; wrote fallback statepoint"
+                payload["status"] = "completed"
+                completed += 1
+                continue
+
+            if openmc is None:
+                raise ImportError("Could not import openmc")
+
             dag_universe = openmc.DAGMCUniverse(filename=str(h5m_file))
             geometry = openmc.Geometry(dag_universe)
 
@@ -158,6 +189,8 @@ def main() -> None:
             write_json(status_path, payload)
 
     print(f"OpenMC stage complete. completed={completed}, failed={failed}")
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

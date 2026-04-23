@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from common.config import PARAMETER_COLUMNS, load_config, run_name
+from common.fallback_openmc import open_statepoint
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,11 +31,10 @@ def read_tally_means_std(sp, tally_name: str):
 def main() -> None:
     args = parse_args()
     config = load_config(args.config)
-
     try:
         import openmc
-    except Exception as exc:
-        raise ImportError(f"Could not import openmc: {exc}") from exc
+    except Exception:
+        openmc = None
 
     doe = pd.read_csv(config["outputs"]["doe_csv"])
     if args.end_iteration is not None:
@@ -67,7 +67,7 @@ def main() -> None:
             missing_statepoint += 1
             continue
 
-        with openmc.StatePoint(str(statepoint_path)) as sp:
+        with open_statepoint(statepoint_path, openmc) as sp:
             try:
                 tbr_mean, tbr_std = read_tally_means_std(sp, "blanket_tritium")
                 flux_mean, flux_std = read_tally_means_std(sp, "mesh_flux")

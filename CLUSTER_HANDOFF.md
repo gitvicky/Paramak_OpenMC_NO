@@ -10,6 +10,11 @@ This project is set up with two environment paths:
 - `environment.yml`: macOS-safe baseline for CAD + data tooling
 - `environment.openmc-linux.yml`: full Linux environment including `openmc`
 
+The Linux environment file is intended to be the primary full setup path and now
+includes packaged `openmc`, `moab`, and `cad_to_dagmc` from conda-forge, with
+the local `paramak` and `openmc_plasma_source` submodules installed editably
+via the same conda environment.
+
 The macOS machine used during setup is `Darwin arm64`. On this platform:
 
 - `openmc` is not available from `conda-forge`

@@ -296,3 +296,61 @@ class SmokeTests(unittest.TestCase):
         makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("smoke:", makefile)
         self.assertIn("test-smoke:", makefile)
+
+    def test_macos_fallback_pipeline_without_openmc_or_converter(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            config_path = write_test_config(tmp_path)
+
+            stub_root = tmp_path / "stubs"
+            stub_root.mkdir()
+            (stub_root / "paramak.py").write_text(
+                textwrap.dedent(
+                    """
+                    from pathlib import Path
+
+                    class LayerType:
+                        GAP = "gap"
+                        SOLID = "solid"
+                        PLASMA = "plasma"
+
+                    class Assembly:
+                        def save(self, filename):
+                            Path(filename).write_text("stub step", encoding="utf-8")
+
+                    def spherical_tokamak_from_plasma(**kwargs):
+                        return Assembly()
+                    """
+                ),
+                encoding="utf-8",
+            )
+
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(stub_root)
+            env["PARAMAK_OPENMC_PLATFORM"] = "Darwin"
+
+            run_command(
+                ["make", "all", f"CONFIG={config_path}", "PYTHON=python3"],
+                cwd=REPO_ROOT,
+                env=env,
+            )
+
+            report_path = tmp_path / "dataset" / "extraction_report.json"
+            compiled_hdf5 = tmp_path / "dataset" / "compiled_neutronics_data.h5"
+
+            self.assertTrue(report_path.exists())
+            self.assertTrue(compiled_hdf5.exists())
+
+            with report_path.open("r", encoding="utf-8") as stream:
+                report = json.load(stream)
+            self.assertEqual(report["requested_iterations"], 5)
+            self.assertEqual(report["extracted_iterations"], 5)
+
+            run_dir = tmp_path / "runs" / "iter_0001"
+            with (run_dir / "run_metadata.json").open("r", encoding="utf-8") as stream:
+                run_metadata = json.load(stream)
+            self.assertTrue(run_metadata["used_fallback_dagmc"])
+
+            with (run_dir / "openmc_status.json").open("r", encoding="utf-8") as stream:
+                openmc_status = json.load(stream)
+            self.assertTrue(openmc_status["used_fallback_statepoint"])

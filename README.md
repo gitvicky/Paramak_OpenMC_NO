@@ -1,61 +1,98 @@
 # Paramak OpenMC Dataset Pipeline
 
-This repository generates supervised ML datasets by sampling tokamak geometry and plasma-source parameters, generating CAD with Paramak, running OpenMC transport with DAGMC geometry, and compiling scalar + mesh targets.
+This repository generates supervised-learning datasets for tokamak neutronics studies. It:
 
-Current reactor baseline: `paramak.spherical_tokamak_from_plasma`.
+1. samples reactor and plasma parameters
+2. builds Paramak CAD geometry
+3. converts geometry to DAGMC
+4. runs OpenMC
+5. compiles the outputs into an HDF5 dataset
 
-## Bootstrap
+The baseline reactor is `paramak.spherical_tokamak_from_plasma`.
 
-1. Initialize repository and submodules:
+## Choose Your Platform
+
+### macOS
+
+macOS can run the full pipeline command flow.
+
+There are two macOS modes:
+
+- native Apple Silicon or Intel setup for development and full pipeline execution with fallback artifacts if OpenMC/DAGMC tooling is unavailable
+- Intel-compatible Conda setup (`osx-64`) when you want a verified path for real `openmc` and DAGMC tooling on an Apple Silicon Mac
+
+Apple Silicon (`arm64`) is supported directly. Start with the native `environment.yml` setup below.
 
 ```bash
-git init
-git submodule add git@github.com:fusion-energy/paramak.git submodules/paramak
-git submodule add git@github.com:fusion-energy/openmc-plasma-source.git submodules/openmc_plasma_source
+git clone <your-repo-url>
+cd Paramak_OpenMC_NO
 git submodule update --init --recursive
+conda env create -f environment.yml
+conda activate paramak_openmc_no
+make all
 ```
 
-2. Create and activate a virtual environment:
+Important:
+
+- On Apple Silicon Macs, the commands above create a native ARM Conda environment.
+- `make all` works on macOS.
+- `environment.yml` installs `cad_to_dagmc` from `conda-forge`.
+- `cad_to_dagmc` currently expects `cadquery_direct_mesh_plugin` when using its default CadQuery meshing backend, so the environment files install `cadquery-direct-mesh-plugin` via `pip`.
+- `config.yaml` has `execution.allow_macos_fallbacks: true`, so missing `cad_to_dagmc` or `openmc` can be replaced with synthetic placeholder outputs.
+- That means you can run the whole pipeline on macOS even when the full neutronics stack is not available.
+- If macOS falls back to placeholder `dagmc.h5m` or fallback statepoints, the pipeline completes, but those are not real OpenMC transport results.
+- If you want a lighter validation run on macOS, use `make smoke`.
+
+If you specifically need a Conda environment that mimics Intel macOS tooling for `openmc`, create it as `osx-64` instead of native ARM:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
+conda create -n paramak_openmc_no --platform osx-64 python=3.11
+conda activate paramak_openmc_no
+conda config --add channels conda-forge
+conda config --set channel_priority strict
+conda install -c conda-forge cad_to_dagmc
+conda install -c conda-forge -y "openmc=0.15.2=dagmc*"
 pip install -r requirements.txt
 ```
 
-Conda environments:
+This `osx-64` route has been validated in the project environment with:
 
-- `environment.yml`: macOS-safe baseline (CAD + data tooling, no OpenMC).
-- `environment.openmc-linux.yml`: full Linux OpenMC stack.
+- `python 3.11`
+- `openmc 0.15.2` with a `dagmc_*` build
+- `dagmc 3.2.4`
+- `moab 5.5.1`
+- `cad_to_dagmc 0.11.5`
 
-Create either environment with:
+Note:
+
+- `cad_to_dagmc` from `conda-forge` installs the Python package, but does not provide a `cad_to_dagmc` shell command in this setup.
+- The project CAD stage supports the installed Python package directly, so a missing `cad_to_dagmc` CLI is expected here and does not mean the converter is unavailable.
+- That `osx-64` route is the best option on Apple Silicon when you want real `openmc` on macOS instead of relying on fallback outputs.
+
+### Linux
+
+Linux is the recommended platform when you want the full pipeline with real OpenMC and DAGMC execution.
 
 ```bash
-mamba env create -f environment.yml
-# or
-mamba env create -f environment.openmc-linux.yml
+git clone <your-repo-url>
+cd Paramak_OpenMC_NO
+git submodule update --init --recursive
+conda env create -f environment.openmc-linux.yml
+conda activate paramak_openmc_no
+make all
 ```
 
-Note: on macOS, `openmc` is not available for osx-arm64 from conda-forge at the
-time of writing, so run the full OpenMC stages on Linux.
+You will also need OpenMC nuclear data configured on the machine for real transport runs.
 
-When OpenMC is available (typically Linux/conda-forge), ensure the plasma source
-submodule is installed in editable mode:
+## What To Run
 
-```bash
-pip install -e ./submodules/openmc_plasma_source
-```
-
-## Pipeline
-
-Default sequence:
+### Full pipeline
 
 ```bash
 make all
 ```
 
-Individual stages:
+This runs:
 
 ```bash
 make doe
@@ -64,28 +101,193 @@ make openmc
 make extract
 ```
 
-Smoke test run:
+### Smoke pipeline
 
 ```bash
 make smoke
 ```
 
-Automated smoke-test suite:
+This runs the same stages using `configs/config.smoke.yaml`.
+
+### Individual stages
+
+```bash
+make doe
+make cad
+make openmc
+make extract
+```
+
+## Visualization Tools
+
+The repository includes three different ways to inspect outputs, depending on whether you want to look at geometry, tally data, or both together.
+
+### 1. CAD-only view with Paramak
+
+Script: `src/05_visualize_cad.py`
+
+Use this when you want to inspect the generated reactor geometry itself. It rebuilds the Paramak model for a selected DOE iteration and opens it in the CadQuery viewer, or exports it as `png`, `svg`, or `step`.
+
+Typical commands:
+
+```bash
+python src/05_visualize_cad.py --iteration 1 --show
+python src/05_visualize_cad.py --iteration 1 --png runs/iter_000001/geometry.png
+python src/05_visualize_cad.py --iteration 1 --svg runs/iter_000001/geometry.svg
+```
+
+Best for:
+
+- checking the reactor shape generated by `src/02_build_cad.py`
+- verifying that sampled geometry parameters produce sensible CAD
+- saving quick geometry images for reports or debugging
+
+### 2. 2D slices from the compiled HDF5 dataset
+
+Script: `src/06_visualize_dataset.py`
+
+Use this when you want a simple view of the extracted OpenMC mesh tallies stored in `dataset/compiled_neutronics_data.h5`. It reshapes the flattened mesh data back to the configured mesh dimensions and plots 2D slices of `flux_mean` and `heating_mean`.
+
+Typical commands:
+
+```bash
+python src/06_visualize_dataset.py --sample 0 --show
+python src/06_visualize_dataset.py --sample 0 --axis z --output dataset/flux_heating_slice.png
+```
+
+Best for:
+
+- quickly checking whether flux and heating fields look reasonable
+- comparing slices through the mesh without opening a 3D viewer
+- generating simple figures directly from the compiled dataset
+
+### 3. 3D flux or heating overlay on the CAD model
+
+Script: `src/07_visualize_cad_field_3d.py`
+
+Use this when you want to see the reactor geometry and the OpenMC mesh tally in the same 3D scene. The script rebuilds the matching Paramak reactor from the stored input parameters, reconstructs the OpenMC regular mesh from the HDF5 metadata, and overlays the selected field in `pyvista`.
+
+Typical commands:
+
+```bash
+python src/07_visualize_cad_field_3d.py --sample 0 --field flux --mode slices --show
+python src/07_visualize_cad_field_3d.py --sample 0 --field flux --mode volume --screenshot dataset/flux_cad_overlay.png
+python src/07_visualize_cad_field_3d.py --sample 0 --field heating --mode contours --show
+```
+
+Rendering modes:
+
+- `slices`: orthogonal slice planes through the 3D field
+- `volume`: semi-transparent volumetric rendering of the field
+- `contours`: iso-surfaces highlighting high-value regions
+
+Best for:
+
+- understanding where high flux or heating sits relative to the reactor geometry
+- presenting tally results in a more intuitive spatial view
+- checking whether the regular mesh bounds line up with the CAD as expected
+
+Note:
+
+- the combined 3D overlay currently shows the CAD as a translucent gray surface
+- the flux or heating field carries the color map in the shared scene
+
+### Smoke tests
 
 ```bash
 make test-smoke
 ```
 
-This uses Python's built-in `unittest` runner, so it works without installing extra test-only packages.
+## Environment Files
 
-## Project Layout
+- `environment.yml`: macOS-friendly development environment
+- `environment.openmc-linux.yml`: Linux environment for full OpenMC runs
 
-- `config.yaml`: default full run configuration
-- `configs/config.smoke.yaml`: lightweight smoke configuration
-- `src/01_generate_doe.py`: DoE generation
-- `src/02_build_cad.py`: Paramak to DAGMC export
-- `src/03_run_openmc.py`: OpenMC execution
-- `src/04_extract_data.py`: statepoint extraction + HDF5 compile
-- `src/common/`: shared config, materials, and utility code
-- `runs/`: per-iteration working directories
-- `dataset/`: compiled outputs
+If the Linux environment already exists, update it with:
+
+```bash
+conda env update -n paramak_openmc_no -f environment.openmc-linux.yml
+conda activate paramak_openmc_no
+```
+
+## Quick Checks
+
+After activating the environment:
+
+```bash
+which python
+which python3
+python -c "import paramak; print('paramak ok')"
+python -c "import pandas, scipy, yaml, h5py; print('core stack ok')"
+python -m unittest tests.test_smoke
+```
+
+For full-run readiness:
+
+```bash
+python -c "import openmc, openmc_plasma_source; print('openmc stack ok')"
+python -c "import openmc; print(openmc.__version__)"
+python -c "import cad_to_dagmc; print(cad_to_dagmc.__version__)"
+python -c "import cadquery_direct_mesh_plugin; print('cadquery mesh plugin ok')"
+python -c "import pkg_resources; print('pkg_resources ok')"
+which openmc
+```
+
+If `make` is picking up the wrong interpreter on macOS, run:
+
+```bash
+make PYTHON=$(which python) cad
+```
+
+## Configuration
+
+Main runtime config: `config.yaml`
+
+Useful files:
+
+- `config.yaml`: default run configuration
+- `configs/config.smoke.yaml`: lighter smoke-run configuration
+
+Key settings in `config.yaml`:
+
+- `num_samples`: number of designs to generate
+- `geometry_bounds`: sampled reactor geometry ranges
+- `plasma_source_bounds`: sampled plasma source ranges
+- `openmc_settings`: particles, batches, inactive cycles, statepoints
+- `mesh`: mesh tally bounds and resolution
+- `execution`: run directories, worker count, macOS fallback behavior
+- `outputs`: dataset and report output paths
+
+## Output Locations
+
+Per-run files are written under `runs/<iteration>/`, including:
+
+- `dagmc.h5m`
+- `run_metadata.json`
+- `openmc_status.json`
+- `statepoint.<batches>.h5`
+
+Compiled dataset files are written under `dataset/`, including:
+
+- `doe_parameters.csv`
+- `doe_parameters.parquet`
+- `compiled_neutronics_data.h5`
+- `extraction_report.json`
+
+## Repository Layout
+
+- `Makefile`: pipeline commands
+- `src/01_generate_doe.py`: generate sampled input parameters
+- `src/02_build_cad.py`: build CAD and export DAGMC geometry
+- `src/03_run_openmc.py`: run OpenMC transport
+- `src/04_extract_data.py`: extract tallies and compile the dataset
+- `src/common/`: shared helpers and config handling
+- `tests/test_smoke.py`: smoke tests
+- `submodules/paramak`: local Paramak dependency
+- `submodules/openmc_plasma_source`: local plasma source dependency
+
+## Clean Outputs
+
+```bash
+make clean
+```

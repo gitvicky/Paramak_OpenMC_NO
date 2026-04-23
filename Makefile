@@ -1,4 +1,4 @@
-PYTHON ?= python
+PYTHON ?= $(if $(wildcard .venv/bin/python),./.venv/bin/python,python3)
 CONFIG ?= config.yaml
 
 .PHONY: all doe cad openmc extract smoke test-smoke clean
@@ -6,7 +6,7 @@ CONFIG ?= config.yaml
 all: doe cad openmc extract
 
 doe:
-	$(PYTHON) src/01_generate_doe.py --config $(CONFIG) --write-parquet
+	$(PYTHON) src/01_generate_doe.py --config $(CONFIG) --write-parquet --overwrite
 
 cad:
 	$(PYTHON) src/02_build_cad.py --config $(CONFIG) --resume
