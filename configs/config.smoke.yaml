@@ -35,6 +35,13 @@ mesh:
   lower_left: [-300.0, -300.0, -300.0]
   upper_right: [300.0, 300.0, 300.0]
 
+cad_to_dagmc_settings:
+  min_mesh_size: 15.0
+  max_mesh_size: 35.0
+
+openmc_data:
+  cross_sections: .openmc-data/fendl-3.2-hdf5/cross_sections.xml
+
 outputs:
   doe_csv: dataset/doe_parameters.csv
   doe_parquet: dataset/doe_parameters.parquet

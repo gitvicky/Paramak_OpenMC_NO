@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import inspect
+import os
+import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -44,7 +48,16 @@ def make_source(row: pd.Series):
     try:
         from openmc_plasma_source import tokamak_source
     except Exception:
-        return None
+        repo_root = Path(__file__).resolve().parents[1]
+        plasma_src = repo_root / "submodules" / "openmc_plasma_source" / "src"
+        if plasma_src.exists():
+            sys.path.insert(0, str(plasma_src))
+            try:
+                from openmc_plasma_source import tokamak_source
+            except Exception:
+                return None
+        else:
+            return None
 
     kwargs = {
         "major_radius": float(row["major_radius"]),
@@ -72,12 +85,68 @@ def make_source(row: pd.Series):
         return None
 
 
+def make_default_source(openmc_module, row: pd.Series):
+    """Provide an explicit fallback source for fixed-source transport runs."""
+    if not hasattr(openmc_module, "IndependentSource"):
+        return None
+
+    source = openmc_module.IndependentSource()
+    source.space = openmc_module.stats.Point((float(row["major_radius"]), 0.0, 0.0))
+    source.angle = openmc_module.stats.Isotropic()
+    source.energy = openmc_module.stats.Discrete([14.08e6], [1.0])
+    return source
+
+
 def load_openmc_module():
     try:
         import openmc
     except Exception:
         return None
     return openmc
+
+
+def resolve_openmc_executable() -> str:
+    """Find the OpenMC CLI that matches the active Python environment."""
+    python_bin = Path(sys.executable).resolve()
+    candidates = []
+
+    if python_bin.exists():
+        candidates.append(python_bin.parent / "openmc")
+
+    system_openmc = shutil.which("openmc")
+    if system_openmc:
+        candidates.append(Path(system_openmc))
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    raise FileNotFoundError("Could not find the openmc executable")
+
+
+def build_geometry(openmc_module, h5m_file: Path):
+    """Build geometry using a bounded DAGMC universe when the API supports it."""
+    dag_universe = openmc_module.DAGMCUniverse(filename=str(h5m_file))
+    if hasattr(dag_universe, "bounded_universe"):
+        return openmc_module.Geometry(
+            dag_universe.bounded_universe(
+                bounded_type="sphere",
+                boundary_type="vacuum",
+                padding_distance=10.0,
+            )
+        )
+    return openmc_module.Geometry(dag_universe)
+
+
+def run_model(model, run_dir: Path) -> None:
+    """Run OpenMC with the env-local executable when supported by the API."""
+    run_sig = inspect.signature(model.run)
+    kwargs = {"cwd": str(run_dir)}
+
+    if "openmc_exec" in run_sig.parameters:
+        kwargs["openmc_exec"] = resolve_openmc_executable()
+
+    model.run(**kwargs)
 
 
 def main() -> None:
@@ -148,13 +217,21 @@ def main() -> None:
             if openmc is None:
                 raise ImportError("Could not import openmc")
 
-            dag_universe = openmc.DAGMCUniverse(filename=str(h5m_file))
-            geometry = openmc.Geometry(dag_universe)
+            geometry = build_geometry(openmc, h5m_file)
 
             materials_by_tag = build_materials(openmc)
             materials = openmc.Materials(list(materials_by_tag.values()))
+            cross_sections = config.get("openmc_data", {}).get("cross_sections")
+            if cross_sections:
+                cross_sections_path = Path(cross_sections)
+                if not cross_sections_path.exists():
+                    raise FileNotFoundError(
+                        f"Configured OpenMC cross sections file not found: {cross_sections_path}"
+                    )
+                materials.cross_sections = str(cross_sections_path)
 
             settings = openmc.Settings()
+            settings.run_mode = "fixed source"
             settings.particles = int(config["openmc_settings"]["particles"])
             settings.batches = int(config["openmc_settings"]["batches"])
             settings.inactive = int(config["openmc_settings"]["inactive"])
@@ -164,6 +241,10 @@ def main() -> None:
             if source is not None:
                 settings.source = source
                 payload["used_plasma_source"] = True
+            else:
+                default_source = make_default_source(openmc, row)
+                if default_source is not None:
+                    settings.source = default_source
 
             tallies = openmc.Tallies(build_mesh_tally(openmc, config["mesh"]))
 
@@ -177,7 +258,7 @@ def main() -> None:
                 settings=settings,
                 tallies=tallies,
             )
-            model.run(cwd=str(run_dir))
+            run_model(model, run_dir)
 
             payload["status"] = "completed"
             completed += 1

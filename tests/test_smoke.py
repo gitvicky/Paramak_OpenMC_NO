@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -328,9 +329,14 @@ class SmokeTests(unittest.TestCase):
             env = os.environ.copy()
             env["PYTHONPATH"] = str(stub_root)
             env["PARAMAK_OPENMC_PLATFORM"] = "Darwin"
+            repo_venv_python = REPO_ROOT / ".venv" / "bin" / "python"
+            if repo_venv_python.exists():
+                fallback_python = str(repo_venv_python)
+            else:
+                fallback_python = "/usr/bin/python3" if Path("/usr/bin/python3").exists() else shutil.which("python3") or "python3"
 
             run_command(
-                ["make", "all", f"CONFIG={config_path}", "PYTHON=python3"],
+                ["make", "all", f"CONFIG={config_path}", f"PYTHON={fallback_python}"],
                 cwd=REPO_ROOT,
                 env=env,
             )

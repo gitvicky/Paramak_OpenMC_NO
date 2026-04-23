@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from typing import Iterable
 
 import pandas as pd
 
@@ -54,6 +55,59 @@ def convert_step_to_h5m_with_python(step_path: Path, h5m_path: Path) -> None:
     model = CadToDagmc()
     model.add_stp_file(filename=str(step_path), material_tags="assembly_names")
     model.export_dagmc_h5m_file(filename=str(h5m_path))
+
+    if not h5m_path.exists():
+        raise RuntimeError("cad_to_dagmc Python API did not produce an h5m file")
+
+
+def dagmc_material_tags_for_assembly(assembly) -> list[str]:
+    """Return one DAGMC/OpenMC material tag for each physical solid in the assembly.
+
+    Paramak's spherical tokamak assembly exports six named solids:
+    `layer_1`..`layer_5` plus `plasma`. The old `assembly_names` path produced
+    extra names from the STEP hierarchy, which broke cad_to_dagmc. We derive a
+    compact, deterministic tag list from the actual assembly solids instead.
+    """
+
+    names: Iterable[str] = assembly.names()
+    tag_map = {
+        "layer_1": "shield",
+        "layer_2": "shield",
+        "layer_3": "first_wall",
+        "layer_4": "blanket",
+        "layer_5": "vacuum_vessel",
+        "plasma": "vacuum",
+    }
+
+    material_tags = []
+    for name in names:
+        try:
+            material_tags.append(tag_map[name])
+        except KeyError as exc:
+            known = ", ".join(sorted(tag_map))
+            raise ValueError(
+                f"Unsupported assembly solid name {name!r}. Expected one of: {known}"
+            ) from exc
+
+    return material_tags
+
+
+def convert_assembly_to_h5m_with_python(assembly, h5m_path: Path, config: dict) -> None:
+    """Convert a Paramak/CadQuery assembly directly to H5M via Python API."""
+    from cad_to_dagmc import CadToDagmc
+
+    mesh_cfg = config.get("cad_to_dagmc_settings", {})
+    model = CadToDagmc()
+    model.add_cadquery_object(
+        cadquery_object=assembly,
+        material_tags=dagmc_material_tags_for_assembly(assembly),
+    )
+    model.export_dagmc_h5m_file(
+        filename=str(h5m_path),
+        min_mesh_size=float(mesh_cfg.get("min_mesh_size", 10.0)),
+        max_mesh_size=float(mesh_cfg.get("max_mesh_size", 25.0)),
+        implicit_complement_material_tag="vacuum",
+    )
 
     if not h5m_path.exists():
         raise RuntimeError("cad_to_dagmc Python API did not produce an h5m file")
@@ -141,8 +195,10 @@ def main() -> None:
             assembly = build_reactor_assembly(row, paramak)
             assembly.save(str(step_path))
 
-            if converter_available:
+            if shutil.which("cad_to_dagmc") is not None:
                 convert_step_to_h5m(step_path, h5m_path)
+            elif importlib.util.find_spec("cad_to_dagmc") is not None:
+                convert_assembly_to_h5m_with_python(assembly, h5m_path, config)
             elif running_on_macos and macos_fallbacks_allowed:
                 write_fallback_h5m(h5m_path, iteration_id)
                 payload["used_fallback_dagmc"] = True

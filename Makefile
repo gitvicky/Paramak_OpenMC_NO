@@ -1,4 +1,6 @@
-PYTHON ?= $(if $(wildcard .venv/bin/python),./.venv/bin/python,python3)
+CONDA_BASE := $(shell conda info --base 2>/dev/null)
+CONDA_ENV_PYTHON := $(if $(CONDA_BASE),$(wildcard $(CONDA_BASE)/envs/paramak_openmc_no/bin/python))
+PYTHON ?= $(if $(CONDA_ENV_PYTHON),$(CONDA_ENV_PYTHON),$(if $(wildcard .venv/bin/python),./.venv/bin/python,python3))
 CONFIG ?= config.yaml
 
 .PHONY: all doe cad openmc extract smoke test-smoke clean

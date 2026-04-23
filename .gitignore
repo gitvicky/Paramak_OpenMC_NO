@@ -24,3 +24,7 @@ dataset/*
 
 # Logs
 *.log
+
+
+# Nuclear Data
+.openmc-data/
